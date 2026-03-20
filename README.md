@@ -6,14 +6,14 @@ Runs entirely on your existing Claude Pro/Max subscription. No API key needed.
 
 ## Download
 
-**macOS (Apple Silicon):** [Download Pilot v1.0.0](https://github.com/alexcbruns-lang/pilot/releases/latest)
+**macOS (Apple Silicon):** [Download Pilot v1.0.0](https://github.com/pilotcodeapp/pilot/releases/latest)
 
 Signed and notarized — opens without Gatekeeper warnings.
 
 ## Run from Source (Mac, Linux, Windows)
 
 ```bash
-git clone https://github.com/alexcbruns-lang/pilot.git
+git clone https://github.com/pilotcodeapp/pilot.git
 cd pilot
 npm install
 cd frontend && npm install && npm run build && cd ..

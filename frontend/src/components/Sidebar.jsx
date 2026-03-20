@@ -31,6 +31,7 @@ export default function Sidebar({
   const [tokenInput, setTokenInput] = useState('')
   const [passwordInput, setPasswordInput] = useState('')
   const [tokenSaving, setTokenSaving] = useState(false)
+  const [remoteExpanded, setRemoteExpanded] = useState(false)
   const [showPwChange, setShowPwChange] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [pwChangeStatus, setPwChangeStatus] = useState(null)
@@ -303,11 +304,16 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* ── Active tunnel display ── */}
+        {/* ── Active tunnel: collapsed summary or expanded details ── */}
         {!setupStep && !tunnel.setupNeeded && tunnel.status === 'starting' && (
           <div className="remote-status starting">Connecting...</div>
         )}
-        {!setupStep && tunnel.status === 'running' && tunnel.url && (
+        {!setupStep && tunnel.status === 'running' && tunnel.url && !remoteExpanded && (
+          <button className="remote-expand-btn" onClick={() => setRemoteExpanded(true)}>
+            Show connection details
+          </button>
+        )}
+        {!setupStep && tunnel.status === 'running' && tunnel.url && remoteExpanded && (
           <>
             <span className="remote-url" onClick={() => copyUrl(tunnel.url)} title="Click to copy">
               {tunnel.url.replace('https://', '')}
@@ -320,11 +326,14 @@ export default function Sidebar({
               alt="QR Code"
             />
             <div className="remote-hint">Scan with your phone camera</div>
+            <button className="remote-expand-btn" onClick={() => setRemoteExpanded(false)}>
+              Hide details
+            </button>
           </>
         )}
 
         {/* ── Change password ── */}
-        {tunnel.configured && !setupStep && (
+        {tunnel.configured && !setupStep && remoteExpanded && (
           showPwChange ? (
             <div className="remote-token-setup">
               <input

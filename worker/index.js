@@ -57,8 +57,12 @@ export default {
       }
     }
 
-    // GET /api/admin/accounts (list all accounts)
+    // GET /api/admin/accounts (list all accounts — requires admin key)
     if (url.pathname === '/api/admin/accounts' && request.method === 'GET') {
+      const authHeader = request.headers.get('Authorization');
+      if (!env.ADMIN_KEY || authHeader !== `Bearer ${env.ADMIN_KEY}`) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers });
+      }
       const list = await env.ACCOUNTS.list({ prefix: 'account:' });
       const accounts = [];
       for (const key of list.keys) {

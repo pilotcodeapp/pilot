@@ -2050,6 +2050,18 @@ body {
 }
 .remote-pw-change:hover { color: #888; }
 
+.remote-expand-btn {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: center;
+  width: 100%;
+}
+.remote-expand-btn:hover { color: #999; }
+
 .remote-setup-waiting {
   display: flex;
   flex-direction: column;
