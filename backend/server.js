@@ -774,6 +774,10 @@ app.get('/health', async (req, res) => {
     const nodeVersion = execFileSync('node', ['--version'], { timeout: 3000, env: CLAUDE_ENV, encoding: 'utf-8' }).trim();
     checks.node.installed = true;
     checks.node.version = nodeVersion;
+    const major = parseInt(nodeVersion.replace('v', ''), 10);
+    if (major < 20) {
+      checks.node.versionWarning = 'Node.js v20+ is required. You have ' + nodeVersion;
+    }
   } catch {
     // We're running in Electron which bundles its own Node, but system node may not be available
     // npm install -g needs system node

@@ -1,6 +1,6 @@
 export const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
 export const API_URL = ''
-export const CENTRAL_URL = 'https://app.claudepilot.us'
+export const CENTRAL_URL = 'https://claudepilot.us'
 export const PREVIEW_EXTS = ['.html', '.htm', '.svg', '.md', '.markdown', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.pdf']
 export const COMPONENT_EXTS = ['.jsx', '.tsx']
 

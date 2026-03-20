@@ -1,0 +1,14 @@
+name = "pilot-accounts"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "ACCOUNTS"
+id = "e323cc5d1bff4246aebba72ffcf85241"
+
+[vars]
+CORS_ORIGIN = "*"
+
+[[routes]]
+pattern = "claudepilot.us/api/*"
+zone_name = "claudepilot.us"

@@ -65,6 +65,7 @@ export default function SetupScreen({ onComplete }) {
 
   const nodeInstalled = health?.node?.installed
   const nodeVersion = health?.node?.version
+  const nodeVersionWarning = health?.node?.versionWarning
 
   return (
     <div className="setup-screen">
@@ -85,13 +86,15 @@ export default function SetupScreen({ onComplete }) {
                     <p>Claude Code runs on your existing Anthropic subscription — no API key needed.</p>
                   </div>
                 </div>
-                <div className={`setup-prereq ${nodeInstalled ? 'setup-prereq-ok' : 'setup-prereq-warn'}`}>
-                  <span className="setup-prereq-icon">{nodeInstalled ? '\u2713' : '2'}</span>
+                <div className={`setup-prereq ${nodeInstalled && !nodeVersionWarning ? 'setup-prereq-ok' : 'setup-prereq-warn'}`}>
+                  <span className="setup-prereq-icon">{nodeInstalled && !nodeVersionWarning ? '\u2713' : '2'}</span>
                   <div>
-                    <strong>Node.js (v18+)</strong>
-                    {nodeInstalled
+                    <strong>Node.js (v20+)</strong>
+                    {nodeInstalled && !nodeVersionWarning
                       ? <p>Installed — {nodeVersion}</p>
-                      : <p>Not detected. <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="setup-link">Download Node.js</a> or install via Terminal:</p>
+                      : nodeVersionWarning
+                        ? <p style={{ color: '#ffa726' }}>{nodeVersionWarning}. <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="setup-link">Download Node.js v20+</a> or upgrade via Terminal:</p>
+                        : <p>Not detected. <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="setup-link">Download Node.js</a> or install via Terminal:</p>
                     }
                     {!nodeInstalled && (
                       <>
