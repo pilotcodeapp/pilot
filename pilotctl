@@ -1,0 +1,48 @@
+#!/bin/bash
+# pilotctl — manage the Pilot background service
+PLIST="$HOME/Library/LaunchAgents/com.pilot.app.plist"
+LABEL="com.pilot.app"
+
+case "${1:-status}" in
+  start)
+    launchctl load "$PLIST" 2>/dev/null
+    launchctl start "$LABEL"
+    echo "Pilot started — http://localhost:3001"
+    ;;
+  stop)
+    launchctl stop "$LABEL" 2>/dev/null
+    launchctl unload "$PLIST" 2>/dev/null
+    echo "Pilot stopped"
+    ;;
+  restart)
+    launchctl stop "$LABEL" 2>/dev/null
+    launchctl unload "$PLIST" 2>/dev/null
+    sleep 1
+    launchctl load "$PLIST"
+    launchctl start "$LABEL"
+    echo "Pilot restarted — http://localhost:3001"
+    ;;
+  status)
+    if launchctl list "$LABEL" &>/dev/null; then
+      PID=$(launchctl list "$LABEL" 2>/dev/null | grep PID | awk '{print $NF}')
+      echo "Pilot is running (PID: $PID) — http://localhost:3001"
+    else
+      echo "Pilot is not running"
+    fi
+    ;;
+  logs)
+    tail -f "$HOME/pilot/logs/pilot.log"
+    ;;
+  errors)
+    tail -f "$HOME/pilot/logs/pilot.err"
+    ;;
+  build)
+    echo "Building frontend..."
+    cd "$HOME/pilot/frontend" && npx vite build
+    echo "Restarting Pilot..."
+    "$0" restart
+    ;;
+  *)
+    echo "Usage: pilotctl {start|stop|restart|status|logs|errors|build}"
+    ;;
+esac

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox (required for MAS) -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Network: localhost server + WebSocket -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- File access: user-selected folders via NSOpenPanel -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Persist folder access across restarts -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Spawn child processes (Claude Code binary) -->
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>

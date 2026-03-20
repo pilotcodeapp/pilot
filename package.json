@@ -1,0 +1,48 @@
+{
+  "name": "pilot",
+  "version": "1.0.0",
+  "description": "Pilot — Claude Code desktop app",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:frontend": "cd frontend && npm run build",
+    "build:mac": "npm run build:frontend && electron-builder --mac --config.mac.target=dmg",
+    "build:mas": "npm run build:frontend && electron-builder --mac --config.mac.target=mas",
+    "dev": "electron ."
+  },
+  "author": "Alex Bruns",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "node-pty": "^1.1.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0",
+    "sharp": "^0.34.5"
+  },
+  "build": {
+    "appId": "com.pilot.app",
+    "productName": "Pilot",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "notarize": true
+    },
+    "mas": {
+      "entitlements": "electron/entitlements.mas.plist",
+      "entitlementsInherit": "electron/entitlements.mas.inherit.plist"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "!**/node_modules/.cache"
+    ],
+    "asar": false
+  }
+}

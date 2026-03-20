@@ -1,0 +1,32 @@
+name: PilotRemote
+options:
+  bundleIdPrefix: com.pilot
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: HSWVN8AT63
+targets:
+  PilotRemote:
+    type: application
+    platform: iOS
+    sources:
+      - PilotRemote
+    settings:
+      base:
+        INFOPLIST_FILE: PilotRemote/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.pilot.remote
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_XR_DESIGNED_FOR: false
+    entitlements:
+      path: PilotRemote/PilotRemote.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.pilot.remote
+        aps-environment: development

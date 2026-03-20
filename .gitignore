@@ -1,0 +1,13 @@
+node_modules/
+dist/
+logs/
+frontend/dist/
+test-preview/
+*.dmg
+*.blockmap
+builder-debug.yml
+.DS_Store
+.env
+.claude/
+xcuserdata/
+*.xcuserstate

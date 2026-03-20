@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#0f0f0f"/>
+    </linearGradient>
+
+    <!-- Warm Claude-inspired gradient for the rose -->
+    <linearGradient id="warm" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8956a"/>
+      <stop offset="50%" stop-color="#d4785a"/>
+      <stop offset="100%" stop-color="#c4684d"/>
+    </linearGradient>
+
+    <!-- Lighter accent gradient -->
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0b08a"/>
+      <stop offset="100%" stop-color="#e8956a"/>
+    </linearGradient>
+
+    <!-- Subtle glow -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8956a" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#e8956a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background with rounded corners (macOS icon shape) -->
+  <rect width="1024" height="1024" rx="228" ry="228" fill="url(#bg)"/>
+
+  <!-- Subtle radial glow behind the rose -->
+  <circle cx="512" cy="512" r="380" fill="url(#glow)"/>
+
+  <!-- Compass rose - 8 points -->
+  <g transform="translate(512, 512)">
+
+    <!-- Cardinal points (N, S, E, W) - larger, elongated -->
+    <!-- North -->
+    <polygon points="0,-340 34,-130 0,-100 -34,-130" fill="url(#warm)" opacity="0.95"/>
+    <!-- South -->
+    <polygon points="0,340 34,130 0,100 -34,130" fill="url(#warm)" opacity="0.95"/>
+    <!-- East -->
+    <polygon points="340,0 130,34 100,0 130,-34" fill="url(#warm)" opacity="0.95"/>
+    <!-- West -->
+    <polygon points="-340,0 -130,34 -100,0 -130,-34" fill="url(#warm)" opacity="0.95"/>
+
+    <!-- Ordinal points (NE, SE, SW, NW) - shorter, thinner -->
+    <!-- NE -->
+    <polygon points="220,-220 100,-68 68,-68 68,-100" fill="url(#accent)" opacity="0.7"/>
+    <!-- SE -->
+    <polygon points="220,220 100,68 68,68 68,100" fill="url(#accent)" opacity="0.7"/>
+    <!-- SW -->
+    <polygon points="-220,220 -100,68 -68,68 -68,100" fill="url(#accent)" opacity="0.7"/>
+    <!-- NW -->
+    <polygon points="-220,-220 -100,-68 -68,-68 -68,-100" fill="url(#accent)" opacity="0.7"/>
+
+    <!-- Inner details - small diamond shapes between points for sparkle effect -->
+    <!-- N-NE -->
+    <polygon points="68,-158 82,-138 68,-118 54,-138" fill="#f0b08a" opacity="0.35"/>
+    <!-- NE-E -->
+    <polygon points="158,-68 138,-54 118,-68 138,-82" fill="#f0b08a" opacity="0.35"/>
+    <!-- E-SE -->
+    <polygon points="158,68 138,54 118,68 138,82" fill="#f0b08a" opacity="0.35"/>
+    <!-- SE-S -->
+    <polygon points="68,158 82,138 68,118 54,138" fill="#f0b08a" opacity="0.35"/>
+    <!-- S-SW -->
+    <polygon points="-68,158 -82,138 -68,118 -54,138" fill="#f0b08a" opacity="0.35"/>
+    <!-- SW-W -->
+    <polygon points="-158,68 -138,54 -118,68 -138,82" fill="#f0b08a" opacity="0.35"/>
+    <!-- W-NW -->
+    <polygon points="-158,-68 -138,-54 -118,-68 -138,-82" fill="#f0b08a" opacity="0.35"/>
+    <!-- NW-N -->
+    <polygon points="-68,-158 -82,-138 -68,-118 -54,-138" fill="#f0b08a" opacity="0.35"/>
+
+    <!-- Center disc with code brackets -->
+    <circle cx="0" cy="0" r="64" fill="url(#warm)" opacity="0.9"/>
+    <circle cx="0" cy="0" r="52" fill="#141414"/>
+    <text x="0" y="8" text-anchor="middle" font-family="-apple-system, 'SF Mono', 'Menlo', monospace" font-size="52" font-weight="600" fill="url(#accent)" opacity="0.95">&lt; /&gt;</text>
+
+  </g>
+</svg>

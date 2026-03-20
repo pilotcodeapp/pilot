@@ -1,0 +1,270 @@
+#!/bin/bash
+# pilot-admin — manage Pilot remote access users
+# Creates Cloudflare tunnels and tokens for users to access Pilot remotely.
+#
+# Usage:
+#   pilot-admin setup              — first-time setup (save API token, detect account/zone)
+#   pilot-admin add-user <name>    — create tunnel + DNS for a user, output their token
+#   pilot-admin remove-user <name> — delete tunnel + DNS for a user
+#   pilot-admin list-users         — list all pilot tunnels
+#   pilot-admin token <name>       — re-display a user's token
+
+set -e
+
+CONFIG_DIR="$HOME/.pilot"
+CONFIG_FILE="$CONFIG_DIR/admin.json"
+DOMAIN=""
+ACCOUNT_ID=""
+ZONE_ID=""
+API_TOKEN=""
+
+# ── Helpers ──
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+load_config() {
+  if [ ! -f "$CONFIG_FILE" ]; then
+    return 1
+  fi
+  API_TOKEN=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('apiToken',''))" 2>/dev/null)
+  ACCOUNT_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('accountId',''))" 2>/dev/null)
+  ZONE_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('zoneId',''))" 2>/dev/null)
+  DOMAIN=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('domain',''))" 2>/dev/null)
+  [ -n "$API_TOKEN" ] && [ -n "$ACCOUNT_ID" ] && [ -n "$ZONE_ID" ] && [ -n "$DOMAIN" ]
+}
+
+require_config() {
+  load_config || die "Not configured. Run: pilot-admin setup"
+}
+
+cf_api() {
+  local method=$1 endpoint=$2 data=$3
+  local args=(-s -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json")
+  [ -n "$data" ] && args+=(-d "$data")
+  curl "${args[@]}" -X "$method" "https://api.cloudflare.com/client/v4$endpoint"
+}
+
+# ── Commands ──
+
+cmd_setup() {
+  echo "Pilot Admin Setup"
+  echo "================="
+  echo ""
+  echo "You need a Cloudflare API token with these permissions:"
+  echo "  - Account > Cloudflare Tunnel > Edit"
+  echo "  - Zone > DNS > Edit"
+  echo ""
+  echo "Create one at: https://dash.cloudflare.com/profile/api-tokens"
+  echo ""
+  read -p "API Token: " API_TOKEN
+  [ -z "$API_TOKEN" ] && die "Token required"
+
+  # Verify token and get account ID
+  echo "Verifying token..."
+  local accounts
+  accounts=$(cf_api GET "/accounts")
+  local success
+  success=$(echo "$accounts" | python3 -c "import json,sys; print(json.load(sys.stdin).get('success',False))" 2>/dev/null)
+  [ "$success" != "True" ] && die "Invalid token. Check permissions and try again."
+
+  ACCOUNT_ID=$(echo "$accounts" | python3 -c "import json,sys; accts=json.load(sys.stdin)['result']; print(accts[0]['id'] if accts else '')" 2>/dev/null)
+  [ -z "$ACCOUNT_ID" ] && die "No account found"
+  local acct_name
+  acct_name=$(echo "$accounts" | python3 -c "import json,sys; accts=json.load(sys.stdin)['result']; print(accts[0]['name'] if accts else '')" 2>/dev/null)
+  echo "Account: $acct_name ($ACCOUNT_ID)"
+
+  # Get domain
+  read -p "Domain for user subdomains (e.g. claudepilot.us): " DOMAIN
+  [ -z "$DOMAIN" ] && die "Domain required"
+
+  # Get zone ID for the domain
+  local zones
+  zones=$(cf_api GET "/zones?name=$DOMAIN")
+  ZONE_ID=$(echo "$zones" | python3 -c "import json,sys; z=json.load(sys.stdin)['result']; print(z[0]['id'] if z else '')" 2>/dev/null)
+  [ -z "$ZONE_ID" ] && die "Domain '$DOMAIN' not found in your Cloudflare account"
+  echo "Zone: $DOMAIN ($ZONE_ID)"
+
+  # Save config
+  mkdir -p "$CONFIG_DIR"
+  python3 -c "
+import json
+config = {'apiToken': '$API_TOKEN', 'accountId': '$ACCOUNT_ID', 'zoneId': '$ZONE_ID', 'domain': '$DOMAIN'}
+json.dump(config, open('$CONFIG_FILE', 'w'), indent=2)
+"
+  chmod 600 "$CONFIG_FILE"
+  echo ""
+  echo "Setup complete! Config saved to $CONFIG_FILE"
+}
+
+cmd_add_user() {
+  local username=$1
+  [ -z "$username" ] && die "Usage: pilot-admin add-user <username>"
+  require_config
+
+  local subdomain="${username}.${DOMAIN}"
+  local tunnel_name="pilot-${username}"
+
+  echo "Creating tunnel for $username..."
+
+  # Create tunnel via API
+  local secret
+  secret=$(python3 -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())")
+  local result
+  result=$(cf_api POST "/accounts/$ACCOUNT_ID/tunnels" \
+    "{\"name\": \"$tunnel_name\", \"tunnel_secret\": \"$secret\"}")
+  local tunnel_id
+  tunnel_id=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result',{}).get('id',''))" 2>/dev/null)
+
+  if [ -z "$tunnel_id" ]; then
+    # Tunnel might already exist — try to find it
+    local existing
+    existing=$(cf_api GET "/accounts/$ACCOUNT_ID/tunnels?name=$tunnel_name&is_deleted=false")
+    tunnel_id=$(echo "$existing" | python3 -c "import json,sys; t=json.load(sys.stdin).get('result',[]); print(t[0]['id'] if t else '')" 2>/dev/null)
+    [ -z "$tunnel_id" ] && die "Failed to create tunnel. Check API token permissions."
+    echo "Tunnel '$tunnel_name' already exists ($tunnel_id)"
+  else
+    echo "Tunnel created: $tunnel_id"
+  fi
+
+  # Configure ingress (remote config for token-based tunnels)
+  echo "Configuring ingress..."
+  cf_api PUT "/accounts/$ACCOUNT_ID/cfd_tunnel/$tunnel_id/configurations" \
+    "{\"config\":{\"ingress\":[{\"hostname\":\"$subdomain\",\"service\":\"http://localhost:3001\"},{\"service\":\"http_status:404\"}]}}" > /dev/null
+
+  # Create DNS CNAME record
+  echo "Creating DNS record for $subdomain..."
+  # Check if record already exists
+  local existing_dns
+  existing_dns=$(cf_api GET "/zones/$ZONE_ID/dns_records?type=CNAME&name=$subdomain")
+  local existing_id
+  existing_id=$(echo "$existing_dns" | python3 -c "import json,sys; r=json.load(sys.stdin).get('result',[]); print(r[0]['id'] if r else '')" 2>/dev/null)
+
+  if [ -n "$existing_id" ]; then
+    # Update existing record
+    cf_api PUT "/zones/$ZONE_ID/dns_records/$existing_id" \
+      "{\"type\":\"CNAME\",\"name\":\"$subdomain\",\"content\":\"$tunnel_id.cfargotunnel.com\",\"proxied\":true}" > /dev/null
+    echo "DNS record updated"
+  else
+    cf_api POST "/zones/$ZONE_ID/dns_records" \
+      "{\"type\":\"CNAME\",\"name\":\"$subdomain\",\"content\":\"$tunnel_id.cfargotunnel.com\",\"proxied\":true}" > /dev/null
+    echo "DNS record created"
+  fi
+
+  # Generate token
+  local token
+  token=$(python3 -c "
+import json, base64
+creds = {'a': '$ACCOUNT_ID', 't': '$tunnel_id', 's': '$secret'}
+print(base64.b64encode(json.dumps(creds).encode()).decode())
+")
+
+  echo ""
+  echo "========================================"
+  echo "User: $username"
+  echo "URL:  https://$subdomain"
+  echo "========================================"
+  echo ""
+  echo "Access token (give this to $username):"
+  echo ""
+  echo "$token"
+  echo ""
+  echo "They paste this into Pilot's sidebar > Remote Access > Enter access token"
+  echo "========================================"
+}
+
+cmd_remove_user() {
+  local username=$1
+  [ -z "$username" ] && die "Usage: pilot-admin remove-user <username>"
+  require_config
+
+  local subdomain="${username}.${DOMAIN}"
+  local tunnel_name="pilot-${username}"
+
+  # Find tunnel
+  local tunnels
+  tunnels=$(cf_api GET "/accounts/$ACCOUNT_ID/tunnels?name=$tunnel_name&is_deleted=false")
+  local tunnel_id
+  tunnel_id=$(echo "$tunnels" | python3 -c "import json,sys; t=json.load(sys.stdin).get('result',[]); print(t[0]['id'] if t else '')" 2>/dev/null)
+
+  if [ -n "$tunnel_id" ]; then
+    echo "Deleting tunnel $tunnel_name ($tunnel_id)..."
+    # Clean up connections first
+    cf_api DELETE "/accounts/$ACCOUNT_ID/tunnels/$tunnel_id" > /dev/null 2>&1 || \
+    cf_api DELETE "/accounts/$ACCOUNT_ID/tunnels/$tunnel_id?cascade=true" > /dev/null 2>&1 || true
+    echo "Tunnel deleted"
+  else
+    echo "No tunnel found for $username"
+  fi
+
+  # Remove DNS record
+  local dns
+  dns=$(cf_api GET "/zones/$ZONE_ID/dns_records?type=CNAME&name=$subdomain")
+  local dns_id
+  dns_id=$(echo "$dns" | python3 -c "import json,sys; r=json.load(sys.stdin).get('result',[]); print(r[0]['id'] if r else '')" 2>/dev/null)
+  if [ -n "$dns_id" ]; then
+    cf_api DELETE "/zones/$ZONE_ID/dns_records/$dns_id" > /dev/null
+    echo "DNS record removed"
+  fi
+
+  echo "User $username removed"
+}
+
+cmd_list_users() {
+  require_config
+
+  echo "Pilot tunnels on $DOMAIN:"
+  echo ""
+  local tunnels
+  tunnels=$(cf_api GET "/accounts/$ACCOUNT_ID/tunnels?is_deleted=false")
+  echo "$tunnels" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for t in data.get('result', []):
+    name = t.get('name', '')
+    if name.startswith('pilot-'):
+        user = name[6:]
+        status = 'active' if t.get('connections') else 'inactive'
+        tid = t['id'][:8]
+        print(f'  {user:20s} {user}.${DOMAIN:30s} {status:10s} ({tid}...)')
+if not any(t['name'].startswith('pilot-') for t in data.get('result', [])):
+    print('  No users configured')
+"
+}
+
+cmd_token() {
+  local username=$1
+  [ -z "$username" ] && die "Usage: pilot-admin token <username>"
+  require_config
+
+  local tunnel_name="pilot-${username}"
+  local tunnels
+  tunnels=$(cf_api GET "/accounts/$ACCOUNT_ID/tunnels?name=$tunnel_name&is_deleted=false")
+  local tunnel_id
+  tunnel_id=$(echo "$tunnels" | python3 -c "import json,sys; t=json.load(sys.stdin).get('result',[]); print(t[0]['id'] if t else '')" 2>/dev/null)
+  [ -z "$tunnel_id" ] && die "No tunnel found for $username. Run: pilot-admin add-user $username"
+
+  echo "Cannot regenerate the original token (the secret is not stored)."
+  echo "To issue a new token, remove and re-add the user:"
+  echo "  pilot-admin remove-user $username"
+  echo "  pilot-admin add-user $username"
+}
+
+# ── Main ──
+
+case "${1:-}" in
+  setup)        cmd_setup ;;
+  add-user)     cmd_add_user "$2" ;;
+  remove-user)  cmd_remove_user "$2" ;;
+  list-users)   cmd_list_users ;;
+  token)        cmd_token "$2" ;;
+  *)
+    echo "pilot-admin — manage Pilot remote access users"
+    echo ""
+    echo "Commands:"
+    echo "  setup              First-time setup (API token, domain)"
+    echo "  add-user <name>    Create tunnel + DNS, output access token"
+    echo "  remove-user <name> Delete tunnel + DNS"
+    echo "  list-users         List all configured users"
+    echo "  token <name>       Re-display a user's token"
+    ;;
+esac
