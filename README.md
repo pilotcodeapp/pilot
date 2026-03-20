@@ -6,7 +6,7 @@ Runs entirely on your existing Claude Pro/Max subscription. No API key needed.
 
 ## Download
 
-**macOS (Apple Silicon):** [Download Pilot v1.0.0](https://github.com/pilotcodeapp/pilot/releases/latest)
+**macOS (Apple Silicon):** [Download Pilot v1.0.1](https://github.com/pilotcodeapp/pilot/releases/latest)
 
 Signed and notarized — opens without Gatekeeper warnings.
 
