@@ -279,21 +279,52 @@ export default function App() {
   // --- WebSocket ---
   useEffect(() => {
     connectWS()
-    return () => wsRef.current?.close()
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible' && wsRef.current?.readyState !== WebSocket.OPEN) {
+        reconnectDelay.current = 2000
+        connectWS()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      wsRef.current?.close()
+    }
   }, [])
+
+  const reconnectDelay = useRef(2000)
+  const bufferIndex = useRef(0)
 
   function connectWS() {
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
-    ws.onopen = () => setConnected(true)
+    ws.onopen = () => {
+      setConnected(true)
+      reconnectDelay.current = 2000
+      // Request missed messages since last known buffer position
+      if (bufferIndex.current > 0) {
+        ws.send(JSON.stringify({ type: 'replay', since: bufferIndex.current }))
+      }
+    }
     ws.onclose = () => {
       setConnected(false)
-      setTimeout(connectWS, 2000)
+      setTimeout(connectWS, reconnectDelay.current)
+      reconnectDelay.current = Math.min(reconnectDelay.current * 1.5, 30000)
     }
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
+
+      if (data.type === 'replay_done') {
+        bufferIndex.current = data.bufferSize
+        return
+      }
+
+      // Track buffer position for replay on reconnect
+      if (data.type === 'claude_event' || data.type === 'session_end' || data.type === 'error' || data.type === 'cancelled') {
+        bufferIndex.current++
+      }
 
       if (data.type === 'claude_event') {
         const ev = data.event
@@ -558,7 +589,7 @@ export default function App() {
   // --- Notifications ---
   function notifyDone() {
     if (document.visibilityState !== 'hidden') return
-    if (Notification.permission !== 'granted') return
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     new Notification('Pilot', { body: 'Claude has finished working.', icon: '/icon-192.png' })
   }
 
@@ -570,7 +601,7 @@ export default function App() {
     if (!wsRef.current) return
     if (navigator.vibrate) navigator.vibrate(15)
     // Request notification permission on first send
-    if (Notification.permission === 'default') Notification.requestPermission()
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission()
 
     if (hasImage) {
       setMessages(prev => [...prev, {

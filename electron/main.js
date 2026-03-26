@@ -29,21 +29,24 @@ function createWindow() {
 }
 
 function findFreePort(startPort) {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(startPort, () => {
-      const port = srv.address().port;
-      srv.close(() => resolve(port));
-    });
-    srv.on('error', () => {
-      // startPort is taken, let OS pick any free port
-      const srv2 = net.createServer();
-      srv2.listen(0, () => {
-        const port = srv2.address().port;
-        srv2.close(() => resolve(port));
+  return new Promise((resolve) => {
+    function tryPort(port) {
+      if (port > startPort + 10) {
+        // All ports taken, let OS pick
+        const srv = net.createServer();
+        srv.listen(0, '0.0.0.0', () => {
+          const p = srv.address().port;
+          srv.close(() => resolve(p));
+        });
+        return;
+      }
+      const srv = net.createServer();
+      srv.listen(port, '0.0.0.0', () => {
+        srv.close(() => resolve(port));
       });
-      srv2.on('error', reject);
-    });
+      srv.on('error', () => tryPort(port + 1));
+    }
+    tryPort(startPort);
   });
 }
 

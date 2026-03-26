@@ -595,13 +595,24 @@ wss.on('connection', (ws, req) => {
   let lineBuffer = '';
   let pendingFilePath = null;
 
+  // Message buffer — stores messages while Claude is working so reconnecting clients can catch up
+  const messageBuffer = [];
+  const MAX_BUFFER = 500;
+
+  function bufferAndSend(msg) {
+    const json = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    messageBuffer.push(json);
+    if (messageBuffer.length > MAX_BUFFER) messageBuffer.shift();
+    try { ws.send(json); } catch {}
+  }
+
   function processLine(line) {
     line = line.trim();
     if (!line) return;
     try {
       const parsed = JSON.parse(line);
       console.log('Claude event:', parsed.type);
-      ws.send(JSON.stringify({ type: 'claude_event', event: parsed }));
+      bufferAndSend({ type: 'claude_event', event: parsed });
     } catch (e) {
       // not valid JSON
     }
@@ -617,6 +628,16 @@ wss.on('connection', (ws, req) => {
     }
 
     console.log('Received message type:', message.type);
+
+    if (message.type === 'replay') {
+      // Client reconnected and wants missed messages since index
+      const since = message.since || 0;
+      const missed = messageBuffer.slice(since);
+      console.log(`Replaying ${missed.length} buffered messages (since ${since})`);
+      missed.forEach(msg => { try { ws.send(msg); } catch {} });
+      ws.send(JSON.stringify({ type: 'replay_done', bufferSize: messageBuffer.length }));
+      return;
+    }
 
     if (message.type === 'upload_file') {
       try {
@@ -699,7 +720,7 @@ wss.on('connection', (ws, req) => {
             console.log('Claude exited with code:', exitCode);
             if (lineBuffer.trim()) processLine(lineBuffer);
             lineBuffer = '';
-            ws.send(JSON.stringify({ type: 'session_end', code: exitCode }));
+            bufferAndSend({ type: 'session_end', code: exitCode });
             claudeProcess = null;
           });
         } else {
@@ -722,13 +743,13 @@ wss.on('connection', (ws, req) => {
             console.log('Claude exited with code:', exitCode);
             if (lineBuffer.trim()) processLine(lineBuffer);
             lineBuffer = '';
-            ws.send(JSON.stringify({ type: 'session_end', code: exitCode }));
+            bufferAndSend({ type: 'session_end', code: exitCode });
             claudeProcess = null;
           });
         }
       } catch (err) {
         console.error('Failed to spawn Claude:', err);
-        ws.send(JSON.stringify({ type: 'error', message: `Failed to start Claude Code: ${err.message}` }));
+        bufferAndSend({ type: 'error', message: `Failed to start Claude Code: ${err.message}` });
         return;
       }
     }
@@ -738,7 +759,7 @@ wss.on('connection', (ws, req) => {
         claudeProcess.kill();
         claudeProcess = null;
       }
-      ws.send(JSON.stringify({ type: 'cancelled' }));
+      bufferAndSend({ type: 'cancelled' });
     }
 
     if (message.type === 'dev_server_start') {
@@ -784,34 +805,61 @@ app.get('/health', async (req, res) => {
     checks.node.installed = false;
   }
 
-  // Check if claude binary exists
-  const possiblePaths = [
-    process.env.CLAUDE_PATH,
-    path.join(HOME, '.local', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  ].filter(Boolean);
+  // Check if claude binary exists — try `which` first (respects user's full PATH via shell),
+  // then fall back to known locations for cases where shell isn't available (e.g. Electron)
+  const { execFileSync, execSync } = require('child_process');
 
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
+  // Try shell-based lookup first (finds claude regardless of install method: nvm, Homebrew, etc.)
+  try {
+    const whichResult = execSync('which claude', { timeout: 3000, encoding: 'utf-8', shell: true }).trim();
+    if (whichResult && fs.existsSync(whichResult)) {
       checks.claude.installed = true;
-      checks.claude.path = p;
-      break;
+      checks.claude.path = whichResult;
+    }
+  } catch {}
+
+  // Fall back to known paths if `which` didn't find it
+  if (!checks.claude.installed) {
+    const possiblePaths = [
+      process.env.CLAUDE_PATH,
+      path.join(HOME, '.local', 'bin', 'claude'),
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude',
+      path.join(HOME, '.npm-global', 'bin', 'claude'),
+      path.join(HOME, '.nvm', 'versions', 'node'),  // nvm — checked below
+    ].filter(Boolean);
+
+    // For nvm, scan the active version's bin directory
+    try {
+      const nvmDir = path.join(HOME, '.nvm', 'versions', 'node');
+      if (fs.existsSync(nvmDir)) {
+        const versions = fs.readdirSync(nvmDir).sort().reverse();
+        for (const v of versions) {
+          const p = path.join(nvmDir, v, 'bin', 'claude');
+          if (fs.existsSync(p)) { possiblePaths.unshift(p); break; }
+        }
+      }
+    } catch {}
+
+    for (const p of possiblePaths) {
+      if (p && fs.existsSync(p)) {
+        checks.claude.installed = true;
+        checks.claude.path = p;
+        break;
+      }
     }
   }
 
-  // Check if authenticated by running claude with a quick command
+  // Check if Claude works by running --version
   if (checks.claude.installed) {
     try {
-      const { execFileSync } = require('child_process');
       const output = execFileSync(checks.claude.path, ['--version'], {
         timeout: 5000, env: CLAUDE_ENV, encoding: 'utf-8'
       });
       checks.claude.version = output.trim();
-      // If --version succeeded, Claude is installed and working — treat as authenticated
-      // (credential file locations change across Claude Code versions, so file checks are unreliable)
       checks.claude.authenticated = true;
     } catch (e) {
+      // Binary exists but --version failed — could be permissions or broken install
       checks.claude.version = null;
     }
   }
@@ -826,10 +874,11 @@ app.get('/health', async (req, res) => {
 // Install Claude Code
 app.post('/setup/install-claude', async (req, res) => {
   try {
-    const { execFile } = require('child_process');
-    execFile('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
+    const { exec } = require('child_process');
+    // Use shell: true via exec so nvm/Homebrew/custom PATH are available
+    exec('npm install -g @anthropic-ai/claude-code', {
       timeout: 120000,
-      env: CLAUDE_ENV,
+      shell: true,
     }, (err, stdout, stderr) => {
       if (err) {
         console.error('Claude Code install failed:', stderr || err.message);
@@ -1487,11 +1536,31 @@ function isCloudflareLoggedIn() {
   return fs.existsSync(path.join(HOME, '.cloudflared', 'cert.pem'));
 }
 
+let caffeinateProc = null;
+
+function startCaffeinate() {
+  if (caffeinateProc) return;
+  try {
+    caffeinateProc = spawn('caffeinate', ['-s'], { stdio: 'ignore' });
+    caffeinateProc.on('close', () => { caffeinateProc = null; });
+    console.log('Sleep prevention enabled (caffeinate)');
+  } catch {}
+}
+
+function stopCaffeinate() {
+  if (caffeinateProc) {
+    try { caffeinateProc.kill(); } catch {}
+    caffeinateProc = null;
+    console.log('Sleep prevention disabled');
+  }
+}
+
 function startTunnel(port) {
   if (tunnelProc) return;
   const config = loadTunnelConfig();
   if (!config?.token && !config?.tunnelId) return; // No config — nothing to start
 
+  startCaffeinate();
   tunnelStatus = 'starting';
   tunnelUrl = config.url;
   const cfPath = findCloudflared();
@@ -1549,6 +1618,7 @@ function stopTunnel() {
     try { tunnelProc.kill(); } catch {}
     tunnelProc = null;
   }
+  stopCaffeinate();
   tunnelStatus = 'stopped';
   tunnelUrl = null;
   broadcastTunnel();
